@@ -99,29 +99,40 @@ print(f"success: combined graph has {G.number_of_nodes()} nodes and {G.number_of
 Calculates modularity gain, Check if modularity is increased or decrease when
 node is moved to new cluster(newC). Used to check if node should be moved to new cluster"""
 def modularityGain(graph, communities, node, newCommunity, initial = True):
+   
+    if communities[node] == newCommunity:
+       return -10000000
   
-  partition = [node]
-  for neighbor in graph.neighbors(node):
-     if communities[neighbor] == newCommunity:
-        partition.append(neighbor)
-  p = []
-  for key in communities:
-     if communities[key] not in p:
-        p.append(communities[key])
+    p = [] # to test modularuty create full partition of graph including the partition above
 
-  if not initial:
-    for ls in p:
-        for n in partition:
-            if n in ls:
-                 print("Removed: ",n)
-                 ls.remove(n)   
-    p.append([n for n in partition])
-    p = [sublist for sublist in p if sublist]
-    print("Pn len:",len(p))
-    print("Node: ",node)
-    print("Node Community: ",communities[node])
-  print()      
-  return nx.community.modularity(graph,p)
+    for key in communities:# add all unique communities from original communities
+        if communities[key] not in p:
+            p.append(communities[key])
+    num = 0
+    for i in p :
+        num += len(i)
+    print("Num nodes in p: ", num,p)
+   
+    # if we are checking intial modularity before moving then skip this part
+    # if we are checking if a move increases modularity then simulate the move
+    if not initial:
+        for ls in p: # find the community with the node in it and remove node fromit
+            if node in ls:
+                ls.remove(node)   
+                print("removed: ", ls, node)
+            if ls == newCommunity: # find the community to move the node to and add node
+                ls.append(node)
+                print("added to new com: ", ls)
+
+        p = [sublist for sublist in p if sublist] # remove any empty lists
+
+        #testing to debug 
+        num = 0
+        for i in p :
+           num += len(i)
+        print("Num nodes in p: ", num)
+    print()      
+    return nx.community.modularity(graph,p)
 
 
 """
@@ -132,22 +143,23 @@ def moveNodes(graph,communities,queue,n):
     #for range n
     for _ in range(n):
 
-      random.shuffle(queue)
-      #for node in nodes itterate through neighbors and set neighbors community
+      random.shuffle(queue) # randomize order of nodes
+      #for node in queue itterate through neighbors and get neighbor's community
       while queue:
          node = queue.pop(0)
          community = communities[node]
-         #get initial modularity 
          temp = copy.deepcopy(communities)
+        #get initial modularity 
          modularity = modularityGain(graph,temp,node,community)
-         betterCommunities = {} #communities that increased modularity and the gain
+         betterCommunities = {} # holds neighbors whose communities increased modularity and the quality/modularity score
 
-         #check if modularity is gained if node moved to neighbor community(are there more internal edges
+         #for each neighbor check if modularity is gained when node moved to its neighbor's community
          for neighbor in graph.neighbors(node):
             neighborCommunity = communities[neighbor]
             temp = copy.deepcopy(communities)
             gain = modularityGain(graph,temp,node,neighborCommunity,False)
-            #if modularity if gained then move node to target community and track current modularity
+
+            #if modularity is gained then update betterCommunities
             if gain > modularity:
                betterCommunities[gain] = neighbor
         
@@ -155,12 +167,11 @@ def moveNodes(graph,communities,queue,n):
          if betterCommunities:
             coms = [betterCommunities[key] for key in betterCommunities]
             modVals = [key for key in betterCommunities]
+            #random choices doesn't evaluate if number is less than zero so convert to 0 if less than
             for i, val in enumerate(modVals):
                if val < 0:
-                  modVals[i] = val*-1
+                  modVals[i] = 0
                   
-             
-            print("Moving to new com: ", coms,modVals)
             newCommunityNode = random.choices(coms,weights=modVals,k=1)
             newCommunityNode = newCommunityNode[0]
 
@@ -168,15 +179,12 @@ def moveNodes(graph,communities,queue,n):
             for neighbor in graph.neighbors(node):
                 if communities[neighbor] != communities[newCommunityNode] and neighbor not in queue:
                    queue.append(neighbor)
+
             #move node to new community 
             communities[newCommunityNode].append(node)
             #set node community to new community
             communities[node] = communities[newCommunityNode]
-            #remove node from old community, if community only consisted of node then delete it 
-            # if len(communities[node]) > 1:
-            #      communities[node].remove(node)
-            # else:
-            #    del communities[node]
+            
                   
     
     print("List of communities after local move: ",communities)
