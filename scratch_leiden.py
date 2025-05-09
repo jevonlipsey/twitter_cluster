@@ -192,37 +192,38 @@ def moveNodes(graph,communities,queue,n):
          
 
 def refinementOfPartition(graph,communities):
-   refined = {}
-   for node in communities:
-        p_refined = {node: node for node in communities.keys()}
-        queue = random.shuffle(communities[node])
-      #for node in nodes itterate through neighbors and set neighbors community
-        while queue:
-         node = queue.pop(0)
-         community = communities[node]
-         #get initial modularity 
-         modularity = modularityGain(graph,communities,node,community)
-         betterCommunities = {} #communities that increased modularity and the gain
+    refined = copy.deepcopy(communities) 
 
-         #check if modularity is gained if node moved to neighbor community(are there more internal edges
-         for n in p_refined:
-            neighborCommunity = p_refined[n]
-            gain = modularityGain(graph,communities,node,neighborCommunity)
-            #if modularity is gained then move node to target community and track current modularity
-            if gain > modularity:
-               betterCommunities[neighborCommunity] = gain
-        
-        #randomly but weighted by modularity score, select a new community with improved modularity/that increases the quality function
-         if betterCommunities:
-            newCommunity = random.choices(betterCommunities.keys(),weights=betterCommunities.values(),k=1)
-        
-            p_refined[node] =  p_refined[node] + newCommunity
+    # get all nodes from graph and randomly shuffle their orders
+    graphNodes = []
+    for node in graph:
+        graphNodes.append(node)
+    random.shuffle(graphNodes)
 
-         else:
-           p_refined[node] = communities[node]
-        
-        refined.append(p_refined.values())
+    # iterate through each node to find best community
+    for node in graphNodes: 
+        currentCommunity = refined[node] # node's current community
+        bestCommunity = currentCommunity 
+        nodeModularity = modularityGain(graph, refined, node, currentCommunity)  
 
+        # try moving the node to each neighbor's community and see if modularity improves
+        for neighbor in graph.neighbors(node):
+            neighborCommunity = refined[neighbor]
+
+            # skip if the neighbor is in the same community
+            if neighborCommunity == currentCommunity:
+                continue
+
+            # copy community labels and simulate the move
+            temp = copy.deepcopy(refined)
+            neighborModularity = modularityGain(graph, temp, node, neighborCommunity, initial=False)
+
+            # if moving the node improves modularity, update bestCommunity
+            if neighborModularity > nodeModularity:
+                bestCommunity = neighborCommunity
+                nodeModularity = neighborModularity
+        refined[node] = bestCommunity  # assign the node to the best community found
+    
    print("List of communities after refinement:",refined)
 
 """
