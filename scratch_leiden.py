@@ -217,8 +217,20 @@ class Leiden():
 
     def addEdges(self):
         pass
+        
     def colorCommunities(self):
-        pass
+        def randomRGB(): #helper function to generate random color value for communities
+            return(random.random(), random.random(), random.random())
+        colorMap = {} # dictionary for communityID colors. keys are communityID, and value is its respective color
+        nodeColors = {} # tracks community color for each respective node
+
+        for node in self.graph.nodes():
+            communityID = self.communities[node] # finds what community node belongs to
+            if communityID not in colorMap:
+                colorMap[communityID] = randomRGB() # new key-value pair in colorMap dictionary with communityID and color
+            nodeColors[node] = colorMap[communityID] # assigns node color based on community color
+
+        return nodeColors 
    
 
 """"Testing/Running Code"""
