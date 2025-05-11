@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import random
 import copy
 import requests
-from collections import defaultdict
+from collections import defaultdict,Counter
 
 output = 'twitter_graph.tar.gz'
 extract_dir = 'twitter_graph'
@@ -99,12 +99,31 @@ print(f"success: combined graph has {G.number_of_nodes()} nodes and {G.number_of
 
 class Leiden():
     def __init__(self, graph):
+
         self.graph = graph
         self.communities = {node:node for node in graph.nodes()}
+        #keep trak of curr modularity
+        self.modularity = nx.community.modularity(self.graph,[[val] for val in self.communities.values()])
+        self.P = None #will be set to the original partition created in local moving phase, used in following itterations of aggregrate graph
 
 
-    def run(self):
-       self.localMoving()
+    def run(self,itterations=5):
+       for _ in range(itterations):
+            self.localMoving()
+           
+
+       # community stats
+       communities = defaultdict(set)
+       for node, com in self.communities.items():
+            communities[com].add(node)
+
+       community_sizes = [len(com) for com in communities.values()]
+       print("\nCommunity sizes:")
+       for size in sorted(community_sizes):
+            print(f"Community {size} nodes")
+
+       print("Num of Communities: ", len(community_sizes))
+
 
     def localMoving(self):
         queue = list(self.graph.nodes())
@@ -139,7 +158,7 @@ class Leiden():
                 modVals = [key for key in betterCommunities]
             #random choices doesn't evaluate if number is less than or = zero so convert num if less than FIX THIS
                 for i, val in enumerate(modVals):
-                    if val < 0:
+                    if val <= 0:
                         modVals[i] = 0.0000000000000000001
                   
                 newCommunityNode = random.choices(coms,weights=modVals,k=1)
@@ -155,7 +174,7 @@ class Leiden():
             #set node community to new community
                 self.communities[node] = self.communities[newCommunityNode]
             
-                  
+        self.P = copy.deepcopy(self.communities)
         self.refinementOfPartition()
       
     def modularityGain(self,communities):
@@ -170,12 +189,18 @@ class Leiden():
         return nx.community.modularity(self.graph,partition)
         
     def refinementOfPartition(self):
+      
         #start with all nodes in singleton communitites
         refined = {node: node for node in self.graph.nodes()}
         #dictionary of sets representing comunitiy mapping of nodes from local movement phase
         communities = defaultdict(set)
         for node, com in self.communities.items():
             communities[com].add(node)
+
+        #checking for increased modularity after local movement
+        print("prev modularity: ", self.modularity)
+        self.modularity = nx.community.modularity(self.graph,[communities[key] for key in communities])
+        print("curr modularity (after local movement): ", self.modularity)
 
     # get all nodes from graph and randomly shuffle their orders
         for node in self.graph.nodes():
@@ -207,11 +232,19 @@ class Leiden():
                 refined[node] = currentCommunity
             refined[node] = bestCommunity  # move the node to the best community found
         
-        #Testing Uncomment to see refined comms
-        # r = defaultdict(set)
-        # for n, c in self.communities.items():
-        #     r[c].add(n)
-        # print(r)
+
+        self.communities = refined
+
+        #checking for increased modularity after refinement
+        communities = defaultdict(set)
+        for node, com in self.communities.items():
+            communities[com].add(node)
+        print("prev modularity: ", self.modularity)
+        self.modularity = nx.community.modularity(self.graph,[communities[key] for key in communities])
+        print("curr modularity (after refinement): ", self.modularity)
+
+
+        self.aggregateGraph()
             
     def aggregateGraph(self):
         aggregatedGraph = nx.Graph()
@@ -236,9 +269,15 @@ class Leiden():
 
         for (rootNodeComm, targetNodeComm), count in edgeWeights.items(): # add edges between communities
             aggregatedGraph.add_edge(rootNodeComm, targetNodeComm, weight = count) # weight is how often the community appeared
-            
+        
+        #checking for increased modularity after aggregation (should be same as refinement)
+        print("prev modularity: ", self.modularity)
+        self.modularity = nx.community.modularity(self.graph,[communityNodes[key] for key in communityNodes])
+        print("curr modularity (after aggregation): ", self.modularity)
+
         self.graph = aggregatedGraph # make original graph the new aggregatedGraph
-        self.communities = {node: node for node in self.graph.nodes()} # reset communities
+        self.communities = {node:node for node in self.graph} # reset communities
+         
 
     def addEdges(self, edgeList): # input list of node pairs using ".edges()"
         for sourceNode, targetNode in edgeList: 
@@ -256,7 +295,32 @@ class Leiden():
                 colorMap[communityID] = randomRGB() # new key-value pair in colorMap dictionary with communityID and color
             nodeColors[node] = colorMap[communityID] # assigns node color based on community color
 
-        return nodeColors 
+        return list(nodeColors.values())
+    
+    def visualize(self):
+        # community stats
+        communities = defaultdict(set)
+        for node, com in self.communities.items():
+            communities[com].add(node)
+
+        community_sizes = [len(com) for com in communities]
+        print("\nCommunity sizes:")
+        for size in sorted(community_sizes):
+            print(f"Community {size} nodes")
+
+        print("Num of Communities: ", len(community_sizes))
+        
+        pos = nx.spring_layout(self.graph, seed=42)
+        fig,ax = plt.subplots(figsize=(12,10))
+        nodeColors = self.colorCommunities()
+        ax.set_title("Leiden Algorithm Clustering of Twitter Communities")
+        ax.axis('off')
+        nx.draw_networkx_nodes(self.graph,pos,node_color=nodeColors,node_size = 50,ax=ax)
+        nx.draw_networkx_edges(self.graph,pos,ax=ax,edge_color='black')
+       
+        plt.tight_layout()
+        plt.show()
+        
 
 def get_twitter_handle(user_id): # userID retrieval from twitter (same code as InfoMap)
     url = 'https://twitids.com/'  
@@ -290,7 +354,7 @@ def get_twitter_handle(user_id): # userID retrieval from twitter (same code as I
 ## Now repeat the process starting with moveNodes until modularity has been maximized
 # take subgraph of 500 nodes from largest connected component
 largest_cc = max(nx.connected_components(G), key=len)
-sample_nodes = random.sample(list(largest_cc), 500)
+sample_nodes = random.sample(list(largest_cc), 1000)
 G_sub = G.subgraph(sample_nodes)
 
 #get nodes from sub graph
@@ -303,4 +367,5 @@ communities = {node: [node] for node in nodes}
 
 alg = Leiden(G_sub)
 alg.run()
-print("Finished!")
+alg.visualize()
+print("Done")
