@@ -9,6 +9,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import random
 import copy
+import requests
 from collections import defaultdict
 
 output = 'twitter_graph.tar.gz'
@@ -213,10 +214,35 @@ class Leiden():
         # print(r)
             
     def aggregateGraph(self):
-        pass
+        aggregatedGraph = nx.Graph()
+        communityNodes = defaultdict(set)
+        edgeWeights = defaultdict(float)
+        
+        for node, community in self.communities.items(): # make key-pair values of communities and nodes to communityNodes
+            communityNodes[community].add(node) 
+        
+        for community in communityNodes: # add nodes to aggregatedGraph based on total communities
+            aggregatedGraph.add_node(community)
 
-    def addEdges(self):
-        pass
+        for rootNode, targetNode in self.graph.edges(): # count edges in communities
+            rootNodeComm = self.communities[rootNode]
+            targetNodeComm = self.communities[targetNode]
+
+            if rootNodeComm != targetNodeComm: # skip iteration if part of the same community
+                edgeKey = tuple(sorted((rootNodeComm, targetNodeComm))) # creates key of two communities that share edge
+                if edgeKey not in edgeWeights:
+                    edgeWeights[edgeKey] = 0
+                edgeWeights[edgeKey] += 1 
+
+        for (rootNodeComm, targetNodeComm), count in edgeWeights.items(): # add edges between communities
+            aggregatedGraph.add_edge(rootNodeComm, targetNodeComm, weight = count) # weight is how often the community appeared
+            
+        self.graph = aggregatedGraph # make original graph the new aggregatedGraph
+        self.communities = {node: node for node in self.graph.nodes()} # reset communities
+
+    def addEdges(self, edgeList): # input list of node pairs using ".edges()"
+        for sourceNode, targetNode in edgeList: 
+            self.graph.add_edge(sourceNode, targetNode) # adds edge for each respective node pair
         
     def colorCommunities(self):
         def randomRGB(): #helper function to generate random color value for communities
@@ -231,6 +257,32 @@ class Leiden():
             nodeColors[node] = colorMap[communityID] # assigns node color based on community color
 
         return nodeColors 
+
+def get_twitter_handle(user_id): # userID retrieval from twitter (same code as InfoMap)
+    url = 'https://twitids.com/'  
+    session = requests.Session()
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                'Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'application/json',
+    }
+    form_data = {'user_input': user_id}
+
+    try:
+        response = session.post(url, data=form_data, headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if 'screen_name' in data:
+                return data['screen_name']
+            else:
+                print(f"!! 'screen_name' not found in JSON for {user_id}")
+        else:
+            print(f" !! HTTP error {response.status_code} for {user_id}")
+    except Exception as e:
+        print(f" !! Exception occurred for {user_id}: {e}")
+        
+    return user_id  # returns id as a fallback, could be an old/changed account
+
    
 
 """"Testing/Running Code"""
