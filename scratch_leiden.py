@@ -216,7 +216,7 @@ class Leiden():
     def aggregateGraph(self):
         aggregatedGraph = nx.Graph()
         communityNodes = defaultdict(set)
-        edgeWeights = defaultdict(float)
+        edgeWeights = {}
         
         for node, community in self.communities.items(): # make key-pair values of communities and nodes to communityNodes
             communityNodes[community].add(node) 
