@@ -96,7 +96,7 @@ print("Number of communities: ", len([community for community in communities if 
 print("Number of verticies: ", g.vcount())
 print("Modularity: ", communities.modularity)
 plt.suptitle("IGraph Leiden Algorithm")
-plt.show()
+plt.savefig("IGraph Leiden Algorithm")
 
 
 class Leiden():
@@ -106,32 +106,33 @@ class Leiden():
         self.origG = graph
         self.graph = graph
         self.communities = {node:node for node in graph.nodes()}
-        #keep trak of curr modularity
+        #keep track of curr modularity
         self.modularity = self.findModularity(self.communities)
        
 
-    def run(self):
+    def run(self, resolutionParameter = 1):
        startTime = time.time()
-       run = True
-       trackQuality = [self.modularity]
+      
+    #    trackQuality = [self.modularity]
        print("Original Modularity: ", self.modularity)
-       while run:
+       for _ in range(resolutionParameter):
             self.communities = self.localMoving()
-        
             self.modularity = self.findModularity(self.communities)
-            trackQuality.append(self.modularity)
+            # trackQuality.append(self.modularity)
+
+            # #if modularity score not improving
+            # if trackQuality[-1] == trackQuality[-2]:
+       
+       endTime = time.time()
+                # # alg.visualize()
+                # run = False
+                # print("Maximum Modularity Reached, Quality Stabalized")
+       print("Runtime: ", endTime - startTime)
+       print("Final modularity: ", self.modularity)
+       return self.modularity
            
 
-            #if modularity score not improving
-            if trackQuality[-1] == trackQuality[-2]:
-                endTime = time.time()
-                # alg.visualize()
-                run = False
-                print("Maximum Modularity Reached, Quality Stabalized")
-                print("Runtime: ", endTime - startTime)
-           
-
-    def localMoving(self):
+    def localMoving(self, partition = None,agg= False):
         print("Local moving phase...")
         partition = {node:node for node in self.graph} # reset communities
         queue = list(self.graph.nodes())
@@ -184,7 +185,10 @@ class Leiden():
             # communities[newCommunityNode].append(node)
             #set node community to new community
                 partition[node] = partition[newCommunityNode]
-     
+
+        if agg:
+            self.visualize(partition,"Local Movement of Aggragated Graph")
+            return partition
         return self.refinementOfPartition(partition)
 
     """
@@ -280,8 +284,7 @@ class Leiden():
         partition = {}
         for node, community in refined.items(): # make key-pair values of communities and nodes to communityNodes
             communityNodes[community].add(node) 
-            partition[community] = community
-         
+        
         for community in communityNodes: # add nodes to aggregatedGraph based on total communities
             aggregatedGraph.add_node(community,)
 
@@ -298,16 +301,29 @@ class Leiden():
 
         for (rootNodeComm, targetNodeComm), count in edgeWeights.items(): # add edges between communities
             aggregatedGraph.add_edge(rootNodeComm, targetNodeComm, weight=count) # weight is how often the community appeared
-            partition[rootNodeComm] = targetNodeComm
-            
         
+        for edge in edgeWeights:
+            if edge[0] not in partition.keys():
+                partition[edge[0]] = edge[1]
+                if edge[1] not in partition.keys():
+                    partition[edge[1]] = edge[0]
+            else:
+                partition[edge[1]] = edge[0]
+        
+        for node in communityNodes.keys():
+            if node not in partition.keys():
+                partition[node]=node
+        
+            
         self.graph = aggregatedGraph # make original graph the new aggregatedGraph
-        self.visualize(refined,"Scratch Leiden After Aggregation")
+        self.visualize(partition,"Scratch Leiden After Aggregation")
 
-        return refined #add partition 
+        return self.localMoving(partition,True)
     
         
     def colorCommunities(self,partiton):
+        if len(partiton) == 0:
+            return ['blue']
         def randomRGB(): #helper function to generate random color value for communities
             return(random.random(), random.random(), random.random())
         colorMap = {} # dictionary for communityID colors. keys are communityID, and value is its respective color
@@ -331,13 +347,14 @@ class Leiden():
         plt.figure(figsize=(10, 10))
         plt.tight_layout()
         pos = nx.spring_layout(self.graph, seed=42)
+
         nx.draw(
             self.graph, pos, node_color=nodeColors,
             node_size=50, font_size=10, font_color='black', edge_color='gray'
             )
 
         plt.suptitle(title, fontsize=14)
-        plt.show()
+        plt.savefig(title)
         
 
 def get_twitter_handle(user_id): # userID retrieval from twitter (same code as InfoMap)
@@ -368,19 +385,6 @@ def get_twitter_handle(user_id): # userID retrieval from twitter (same code as I
    
 
 """"Testing/Running Code"""
-
-# """TESTING ONLY delete later"""
-# # # Create a simple graph with 15 nodes and some edges connecting them
-# edges = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0),
-#     (6, 7), (7, 8), (8, 9), (9, 6), (3, 9), (5, 6),
-#     (10, 11), (11, 12), (12, 13), (13, 14), (14, 10), (1, 11)]
-
-# # Create the graph and add the edges
-# graph = nx.Graph()
-# graph.add_edges_from(edges)
-
-# Show the graph
-
 alg = Leiden(G_sub2)
-alg.run()
+alg.run(1)
 
