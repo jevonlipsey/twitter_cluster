@@ -143,9 +143,7 @@ print(f"success: combined graph has {G.number_of_nodes()} nodes and {G.number_of
 ##
 
 # init subgraphs section: test with subgraphs until ready to build full graph (if possible)
-# build random ego as a g_sub
-# use Fox News ego graph specifically
-# load ego graphs for CNN, New Yorker, and Fox News
+# g_sub: left vs. right news accounts
 ego_ids = ['2097571', '14677919', '1367531']  # CNN, New Yorker, Fox News
 G_sub = nx.Graph()
 
@@ -156,10 +154,20 @@ for eid in ego_ids:
             u, v = line.strip().split()
             G_sub.add_edge(u, v)
 
-print(f"Combined subgraph: {G_sub.number_of_nodes()} nodes, {G_sub.number_of_edges()} edges")
+print(f"left vs. right news subgraph: {G_sub.number_of_nodes()} nodes, {G_sub.number_of_edges()} edges")
 
+# g_sub2: random ego graph
+center_node = random.choice(list(G.nodes()))
+G_sub2 = nx.ego_graph(G, center_node, radius=2)
+print(f"ego subgraph: {G_sub.number_of_nodes()} nodes, {G_sub.number_of_edges()} edges")
+
+# if g_sub is too big, trim to max testing nodes
+if G_sub2.number_of_nodes() > MAX_NODES:
+    sampled_nodes = random.sample(list(G_sub2.nodes()), MAX_NODES)
+    G_sub2 = G.subgraph(sampled_nodes).copy()
 # run Infomap section:
-# set g_working to G for main graph or G_sub2
+
+# set g_working to G for main graph or G_sub/G_sub2
 G_working = G_sub
 #nG_working = G
 infomap = ScratchInfomap(G_working)
