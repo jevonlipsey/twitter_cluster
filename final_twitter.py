@@ -11,8 +11,8 @@ import requests
 import time
 from infomap import Infomap
 
-MAX_NODES = 1000
-SHOW_TOP_USERS = 10
+MAX_NODES = 200
+SHOW_TOP_USERS = 20
 
 
 class ScratchInfomap:
@@ -156,32 +156,35 @@ for eid in ego_ids:
 
 print(f"left vs. right news subgraph: {G_sub.number_of_nodes()} nodes, {G_sub.number_of_edges()} edges")
 
+'''
 # g_sub2: random ego graph
 center_node = random.choice(list(G.nodes()))
 G_sub2 = nx.ego_graph(G, center_node, radius=2)
-print(f"ego subgraph: {G_sub.number_of_nodes()} nodes, {G_sub.number_of_edges()} edges")
+print(f"ego subgraph: {G_sub2.number_of_nodes()} nodes, {G_sub2.number_of_edges()} edges")
 
 # if g_sub is too big, trim to max testing nodes
 if G_sub2.number_of_nodes() > MAX_NODES:
     sampled_nodes = random.sample(list(G_sub2.nodes()), MAX_NODES)
     G_sub2 = G.subgraph(sampled_nodes).copy()
-# run Infomap section:
+'''
+##
 
-# set g_working to G for main graph or G_sub/G_sub2
+# run Infomap section:
+# OPTIONS: G, G_sub, G_sub2
 G_working = G_sub
-#nG_working = G
+
 infomap = ScratchInfomap(G_working)
 scratch_start = time.time()
-communities = infomap.run(20)
+communities = infomap.run(30)
 scratch_end = time.time()
-print("infomap successfully detected communities")
+print(f"infomap run complete: {scratch_end - scratch_start} seconds")
 
 # map communities to ints
 unique_communities = set(communities.values())
 community_to_int = {comm: i for i, comm in enumerate(unique_communities)}
 int_communities = {node: community_to_int[comm] for node, comm in communities.items()}
 num_coms = len(unique_communities)
-print(f"Found {num_coms} communities")
+print(f"found {num_coms} communities")
 ##
 
 # visualization section:
@@ -243,14 +246,15 @@ for i, (node, _) in enumerate(top_nodes):
     handle = get_twitter_handle(node)
     print(f"Node {node}: Community {community_id}, Handle: @{handle}")
 
-# time stats
-print(f"[[ our implemented Infomap took {scratch_end - scratch_start:.4f} seconds ]]")
-print("running official Infomap...")
+# time stats - compare vs official infomap
 im = Infomap()
 node_id_map = {node: i for i, node in enumerate(G_working.nodes())}
 for u, v in G_working.edges():
     im.addLink(node_id_map[u], node_id_map[v])
-start = time.time()
+official_start = time.time()
 im.run()
-end = time.time()
-print(f"[[ official Infomap took {end - start:.4f} seconds ]]")
+official_end = time.time()
+
+print(f"[[ our implemented Infomap took {scratch_end - scratch_start:.4f} seconds ]]")
+print("running official Infomap...")
+print(f"[[ official Infomap took {official_end - official_start:.4f} seconds ]]")
