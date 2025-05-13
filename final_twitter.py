@@ -12,7 +12,7 @@ import time
 from infomap import Infomap
 
 MAX_NODES = 200
-SHOW_TOP_USERS = 20
+SHOW_TOP_USERS = 10
 
 
 class ScratchInfomap:
@@ -175,7 +175,7 @@ G_working = G_sub
 
 infomap = ScratchInfomap(G_working)
 scratch_start = time.time()
-communities = infomap.run(30)
+communities = infomap.run(100)
 scratch_end = time.time()
 print(f"infomap run complete: {scratch_end - scratch_start} seconds")
 
