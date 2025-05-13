@@ -11,7 +11,7 @@ import requests
 import time
 from infomap import Infomap
 
-MAX_NODES = 200
+MAX_NODES = 1000
 SHOW_TOP_USERS = 5
 
 
@@ -144,23 +144,24 @@ print(f"success: combined graph has {G.number_of_nodes()} nodes and {G.number_of
 
 # init subgraphs section: test with subgraphs until ready to build full graph (if possible)
 # build random ego as a g_sub
-center_node = random.choice(list(G.nodes()))
-G_sub = nx.ego_graph(G, center_node, radius=2)
-print(f"ego subgraph: {G_sub.number_of_nodes()} nodes, {G_sub.number_of_edges()} edges")
+# use Fox News ego graph specifically
+# load ego graphs for CNN, New Yorker, and Fox News
+ego_ids = ['2097571', '14677919', '1367531']  # CNN, New Yorker, Fox News
+G_sub = nx.Graph()
 
-# if g_sub is too big, trim to max testing nodes
-if G_sub.number_of_nodes() > MAX_NODES:
-    sampled_nodes = random.sample(list(G_sub.nodes()), MAX_NODES)
-    G_sub2 = G.subgraph(sampled_nodes).copy()
-else:
-    G_sub2 = G_sub
+for eid in ego_ids:
+    ego_file = os.path.join(GRAPH_DIR, f"{eid}.edges")
+    with open(ego_file, 'r') as f:
+        for line in f:
+            u, v = line.strip().split()
+            G_sub.add_edge(u, v)
 
-print(f"trimmed ego subgraph (G_sub2): {G_sub2.number_of_nodes()} nodes, {G_sub2.number_of_edges()} edges")
+print(f"Combined subgraph: {G_sub.number_of_nodes()} nodes, {G_sub.number_of_edges()} edges")
 
 # run Infomap section:
 # set g_working to G for main graph or G_sub2
-G_working = G_sub2
-# G_working = G
+G_working = G_sub
+#nG_working = G
 infomap = ScratchInfomap(G_working)
 scratch_start = time.time()
 communities = infomap.run()
