@@ -12,7 +12,7 @@ import time
 from infomap import Infomap
 
 MAX_NODES = 1000
-SHOW_TOP_USERS = 5
+SHOW_TOP_USERS = 10
 
 
 class ScratchInfomap:
