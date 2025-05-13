@@ -10,10 +10,12 @@ import matplotlib.pyplot as plt
 import random
 import copy
 import requests
+import time
 from collections import defaultdict,Counter
 import itertools
 from operator import itemgetter
 
+MAX_NODES = 200
 output = 'twitter_graph.tar.gz'
 extract_dir = 'twitter_graph'
 GRAPH_DIR = os.path.join(extract_dir, 'twitter')
@@ -47,14 +49,23 @@ for f in edge_files:
 
 print(f"success: combined graph has {G.number_of_nodes()} nodes and {G.number_of_edges()} edges.")
 
+# init subgraphs section: test with subgraphs until ready to build full graph (if possible)
+# build random ego as a g_sub
+center_node = random.choice(list(G.nodes()))
+G_sub = nx.ego_graph(G, center_node, radius=2)
+print(f"ego subgraph: {G_sub.number_of_nodes()} nodes, {G_sub.number_of_edges()} edges")
+
+# if g_sub is too big, trim to max testing nodes
+if G_sub.number_of_nodes() > MAX_NODES:
+    sampled_nodes = random.sample(list(G_sub.nodes()), MAX_NODES)
+    G_sub2 = G.subgraph(sampled_nodes).copy()
+else:
+    G_sub2 = G_sub
+
+print(f"trimmed ego subgraph (G_sub2): {G_sub2.number_of_nodes()} nodes, {G_sub2.number_of_edges()} edges")
 
 
-#convert from nx to igraph
-# take subgraph of 500 nodes from largest connected component
-largest_cc = max(nx.connected_components(G), key=len)
-sample_nodes = random.sample(list(largest_cc), 1500)
-G_sub = G.subgraph(sample_nodes)
-g = ig.Graph.from_networkx(G_sub)
+g = ig.Graph.from_networkx(G_sub2)
 
 #partition graph with leiden algorithm
 communities = g.community_leiden(objective_function="modularity")
@@ -81,38 +92,43 @@ ig.plot(communities,
 print("Leiden Clustering on Twitter Subgraph")
 fig.set_size_inches(15,15)
 
-#stats
 print("Number of communities: ", len([community for community in communities if len(community)>1]))
 print("Number of verticies: ", g.vcount())
 print("Modularity: ", communities.modularity)
+plt.suptitle("IGraph Leiden Algorithm")
+plt.show()
 
 
 class Leiden():
+
     def __init__(self, graph):
-        self.structure = None
+        
         self.origG = graph
         self.graph = graph
         self.communities = {node:node for node in graph.nodes()}
         #keep trak of curr modularity
         self.modularity = self.findModularity(self.communities)
-        self.P = None #will be set to the original partition created in local moving phase, used in following itterations of aggregrate graph
-
+       
 
     def run(self):
+       startTime = time.time()
        run = True
        trackQuality = [self.modularity]
        print("Original Modularity: ", self.modularity)
        while run:
             self.communities = self.localMoving()
+        
             self.modularity = self.findModularity(self.communities)
             trackQuality.append(self.modularity)
            
 
             #if modularity score not improving
             if trackQuality[-1] == trackQuality[-2]:
-                alg.visualize()
+                endTime = time.time()
+                # alg.visualize()
                 run = False
                 print("Maximum Modularity Reached, Quality Stabalized")
+                print("Runtime: ", endTime - startTime)
            
 
     def localMoving(self):
@@ -168,7 +184,7 @@ class Leiden():
             # communities[newCommunityNode].append(node)
             #set node community to new community
                 partition[node] = partition[newCommunityNode]
-            
+     
         return self.refinementOfPartition(partition)
 
     """
@@ -188,9 +204,11 @@ class Leiden():
     c_i,c_j = communities of node i and j
     """
     def findModularity(self,partiiton):
-        g = self.origG
-        m = g.number_of_edges()
-        degree = dict(g.degree())
+        g = self.graph
+        m = g.size(weight="weight")
+        if m == 0:
+            return 0
+        degree = dict(g.degree(weight="weight"))
 
         #community to nodes mapping
         comToNodes = defaultdict(set)
@@ -199,14 +217,17 @@ class Leiden():
 
         Q = 0.0
         for nodes in comToNodes.values():
-            for i in nodes:
-                for j in nodes:
-                    A_ij = 1 if g.has_edge(i,j) else 0
-                    expected = (degree[i]*degree[j])/ (2*m)
+           for i,j in itertools.combinations(nodes,2):
+                    A_ij = g[i][j].get("weight",1) if g.has_edge(i,j) else 0
+                    d_i = degree.get(i,1)
+                    d_j = degree.get(j,1)
+                    if d_i == 0 or d_j == 0:
+                        expected = 0
+                    else:
+                        expected = (d_i*d_j/ (2*m))
                     Q += A_ij - expected
     
         return Q/(2*m)
-
         
     def refinementOfPartition(self,partition):
         print("Refinement phase...")
@@ -248,7 +269,7 @@ class Leiden():
                 #revert move for now
                 refined[node] = currentCommunity
             refined[node] = bestCommunity  # move the node to the best community found
-        
+        self.visualize(refined,"Scratch Leiden After Local Movement and Refinement")
         return self.aggregateGraph(refined)
             
     def aggregateGraph(self,refined):
@@ -256,18 +277,13 @@ class Leiden():
         aggregatedGraph = nx.Graph()
         communityNodes = defaultdict(set)
         edgeWeights = {}
-        
+        partition = {}
         for node, community in refined.items(): # make key-pair values of communities and nodes to communityNodes
             communityNodes[community].add(node) 
-        
-        communityStructure = {}
-
+            partition[community] = community
+         
         for community in communityNodes: # add nodes to aggregatedGraph based on total communities
             aggregatedGraph.add_node(community,)
-            communityStructure[community] = communityNodes[community]
-          
-        self.structure = communityStructure
-            
 
         for rootNode, targetNode in self.graph.edges(): # count edges in communities
             rootNodeComm = refined[rootNode]
@@ -276,44 +292,41 @@ class Leiden():
             if rootNodeComm != targetNodeComm: # skip iteration if part of the same community
                 edgeKey = tuple(sorted((rootNodeComm, targetNodeComm))) # creates key of two communities that share edge
                 if edgeKey not in edgeWeights:
-                    edgeWeights[edgeKey] = 0
+                    edgeWeights[edgeKey] = 1
                 edgeWeights[edgeKey] += 1 
 
+
         for (rootNodeComm, targetNodeComm), count in edgeWeights.items(): # add edges between communities
-            aggregatedGraph.add_edge(rootNodeComm, targetNodeComm, weight = count) # weight is how often the community appeared
+            aggregatedGraph.add_edge(rootNodeComm, targetNodeComm, weight=count) # weight is how often the community appeared
+            partition[rootNodeComm] = targetNodeComm
+            
         
         self.graph = aggregatedGraph # make original graph the new aggregatedGraph
-        return refined
-         
+        self.visualize(refined,"Scratch Leiden After Aggregation")
 
-    def addEdges(self, edgeList): # input list of node pairs using ".edges()"
-        for sourceNode, targetNode in edgeList: 
-            self.graph.add_edge(sourceNode, targetNode) # adds edge for each respective node pair
+        return refined #add partition 
+    
         
-    def colorCommunities(self):
+    def colorCommunities(self,partiton):
         def randomRGB(): #helper function to generate random color value for communities
             return(random.random(), random.random(), random.random())
         colorMap = {} # dictionary for communityID colors. keys are communityID, and value is its respective color
         nodeColors = {} # tracks community color for each respective node
 
         for node in self.graph.nodes():
-            communityID = self.communities[node] # finds what community node belongs to
+            communityID = partiton[node] # finds what community node belongs to
             if communityID not in colorMap:
                 colorMap[communityID] = randomRGB() # new key-value pair in colorMap dictionary with communityID and color
             nodeColors[node] = colorMap[communityID] # assigns node color based on community color
 
         return list(nodeColors.values())
     
-    def visualize(self):
+    def visualize(self,partition,title):
         
         print("Num of Communities/Nodes: ", self.graph.number_of_nodes())
         print("Num of Edges: ", self.graph.number_of_edges())
-        # print("Neighbors: ", [(node, list(self.graph.neighbors(node)))for node in self.graph.nodes() if len(list(self.graph.neighbors(node))) > 0 ])
-        # print("Edges: ", list(self.graph.edges()))
-        print("Modularity: ", self.findModularity(self.communities))
-        # print("Structure of Aggregated Communities: ",[(key,self.structure[key]) for key in self.structure if len(self.structure[key])>1 ])
-
-        nodeColors = self.colorCommunities()
+        print("Modularity: ", self.findModularity(partition))
+        nodeColors = self.colorCommunities(partition)
 
         plt.figure(figsize=(10, 10))
         plt.tight_layout()
@@ -323,7 +336,7 @@ class Leiden():
             node_size=50, font_size=10, font_color='black', edge_color='gray'
             )
 
-        plt.title("Aggregated Graph by Community", fontsize=14)
+        plt.suptitle(title, fontsize=14)
         plt.show()
         
 
@@ -356,20 +369,6 @@ def get_twitter_handle(user_id): # userID retrieval from twitter (same code as I
 
 """"Testing/Running Code"""
 
-# ## Now repeat the process starting with moveNodes until modularity has been maximized
-# # take subgraph of 500 nodes from largest connected component
-# largest_cc = max(nx.connected_components(G), key=len)
-# sample_nodes = random.sample(list(largest_cc), 1000)
-# G_sub = G.subgraph(sample_nodes)
-
-# #get nodes from sub graph
-# nodes = list(G_sub.nodes())
-# # print("List of nodes: ", nodes)
-
-# #communities start as individual nodes
-# communities = {node: [node] for node in nodes}
-# # print("List of orig communities: ", communities)
-
 # """TESTING ONLY delete later"""
 # # # Create a simple graph with 15 nodes and some edges connecting them
 # edges = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0),
@@ -380,20 +379,8 @@ def get_twitter_handle(user_id): # userID retrieval from twitter (same code as I
 # graph = nx.Graph()
 # graph.add_edges_from(edges)
 
-# # # Improve the visualization with a layout and better styling
-plt.figure(figsize=(8, 8))
-pos = nx.spring_layout(G_sub, seed=42)  # Use a seed for consistent layout
-
-# Draw the graph with additional details
-nx.draw(
-    G_sub, pos, node_color='lightblue',
-    node_size=50, font_size=10, font_color='black', edge_color='gray'
-)
-
 # Show the graph
-plt.title("Graph Visualization", fontsize=14)
-plt.show()
 
-alg = Leiden(G_sub)
+alg = Leiden(G_sub2)
 alg.run()
 
