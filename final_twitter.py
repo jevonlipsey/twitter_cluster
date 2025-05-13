@@ -55,7 +55,7 @@ class ScratchInfomap:
 
         return total_exit * H_Q + H_P
 
-    def run(self, iterations=10):
+    def run(self, iterations):
         for _ in range(iterations):
             nodes = list(self.graph.nodes())
             random.shuffle(nodes)
@@ -164,7 +164,7 @@ G_working = G_sub
 #nG_working = G
 infomap = ScratchInfomap(G_working)
 scratch_start = time.time()
-communities = infomap.run()
+communities = infomap.run(20)
 scratch_end = time.time()
 print("infomap successfully detected communities")
 
