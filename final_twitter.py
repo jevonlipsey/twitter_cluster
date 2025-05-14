@@ -82,19 +82,19 @@ class ScratchInfomap:
         for _ in range(iterations):
             nodes = list(self.graph.nodes())
             random.shuffle(nodes)
-            current_modules = self.modules.copy()
 
+            new_modules = self.modules.copy()
             for node in nodes:
-                current_module = current_modules[node]
+                current_module = self.modules[node]
                 neighbors = list(self.graph.neighbors(node))
-                neighbor_modules = {current_modules[n] for n in neighbors}
+                neighbor_modules = {self.modules[n] for n in neighbors}
                 candidate_modules = neighbor_modules.union({current_module, node})
 
                 best_local_score = float('inf')
                 best_local_module = current_module
 
                 for candidate in candidate_modules:
-                    temp_modules = current_modules.copy()
+                    temp_modules = new_modules.copy()
                     temp_modules[node] = candidate
                     score = self._map_equation(temp_modules)
 
@@ -102,14 +102,14 @@ class ScratchInfomap:
                         best_local_score = score
                         best_local_module = candidate
 
-                current_modules[node] = best_local_module
+                new_modules[node] = best_local_module  # Deferred update
 
-            current_score = self._map_equation(current_modules)
+            self.modules = new_modules
+
+            current_score = self._map_equation(self.modules)
             if current_score < best_score:
                 best_score = current_score
-                best_modules = current_modules.copy()
-
-            self.modules = current_modules.copy()
+                best_modules = self.modules.copy()
 
         self.modules = best_modules
         return self.modules
@@ -141,6 +141,34 @@ def get_twitter_handle(user_id):
         print(f" !! Exception occurred for {user_id}: {e}")
 
     return user_id
+
+
+def print_summary(G, communities, top_k=10):
+    from networkx.algorithms.community.quality import modularity
+
+    # Convert communities to the format expected by networkx (a list of sets)
+    module_sets = defaultdict(set)
+    for node, community in communities.items():
+        module_sets[community].add(node)
+    community_list = list(module_sets.values())
+
+    # Print basic stats
+    print(f"\n[Summary]")
+    print(f"Nodes: {G.number_of_nodes()}, Edges: {G.number_of_edges()}")
+    print(f"Communities found: {len(community_list)}")
+    print(f"Average community size: {sum(len(c) for c in community_list) / len(community_list):.2f}")
+
+    # Modularity
+    mod = modularity(G, community_list)
+    print(f"Modularity: {mod:.4f}")
+
+    # Top degree nodes
+    print(f"\nTop {top_k} high-degree nodes:")
+    top_nodes = sorted(G.degree, key=lambda x: x[1], reverse=True)[:top_k]
+    for i, (node, deg) in enumerate(top_nodes, start=1):
+        comm = communities.get(node, 'N/A')
+        handle = get_twitter_handle(node)
+        print(f"{i}. Node {node} (@{handle}) - Degree: {deg}, Community: {comm}")
 
 
 def dl_graph():
@@ -293,13 +321,14 @@ def main():
 
     G = build_graph(twitter_data)
     G_news = build_news_subgraph(twitter_data, ego_ids)
-    G_small = build_small_subgraph(G)
+    G_small = build_small_subgraph(G_news)
 
     # save_graph(G_news, 'g_news.edges')
     # use to toggle between graphs
-    G_working = G_news
+    G_working = G_small
 
     communities, scratch_start, scratch_end = run_infomap(G_working, ITERATIONS)
+    print_summary(G_working, communities)
     plot_communities(G_working, communities)
     compare_algs(G_working, scratch_start, scratch_end)
 
