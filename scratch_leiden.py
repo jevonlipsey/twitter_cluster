@@ -1,4 +1,4 @@
-#from infomap import Infomap
+# === Library Imports ===
 import leidenalg
 import gdown
 import tarfile
@@ -9,35 +9,37 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import random
 import copy
-import requests
 import time
+import requests
 from collections import defaultdict,Counter
 import itertools
 from operator import itemgetter
+from collections import defaultdict
 
-MAX_NODES = 200
+
+# === Accessing SNAP (Stanford Network Analysis Project) Twitter Dataset === 
 output = 'twitter_graph.tar.gz'
-extract_dir = 'twitter_graph'
-GRAPH_DIR = os.path.join(extract_dir, 'twitter')
+extract_directory = 'twitter_graph'
+graph_directory = os.path.join(extract_directory, 'twitter')
 url = 'https://drive.google.com/uc?id=172sXL1aeK_ZNXCa3WCjkMqtJsn87SMgx&confirm=t'
 
 # if path has been downloaded already, use existing data
-if not os.path.exists(GRAPH_DIR):
+if not os.path.exists(graph_directory):
     # check if the tar file exists, download if not
     if not os.path.exists(output):
         print("downloading graph data...")
-        gdown.download(url, output, quiet=False)
+        gdown.download(url, output, quiet =False)
     # extract data
     print("extracting data...")
     with tarfile.open(output, 'r:gz') as tar:
-        tar.extractall(extract_dir)
+        tar.extractall(extract_directory)
 else:
-    print(f"graph directory {GRAPH_DIR} found; using existing data.")
+    print(f"graph directory {graph_directory} found; using existing data.")
 
 # get all edge files from data
-edge_files = glob.glob(os.path.join(GRAPH_DIR, '*.edges'))
+edge_files = glob.glob(os.path.join(graph_directory, '*.edges'))
 
-# init graph
+# initiate graph
 G = nx.Graph()
 
 # loop through all .edges files and add edges to a combined graph
@@ -49,58 +51,9 @@ for f in edge_files:
 
 print(f"success: combined graph has {G.number_of_nodes()} nodes and {G.number_of_edges()} edges.")
 
-# init subgraphs section: test with subgraphs until ready to build full graph (if possible)
-# build random ego as a g_sub
-center_node = random.choice(list(G.nodes()))
-G_sub = nx.ego_graph(G, center_node, radius=2)
-print(f"ego subgraph: {G_sub.number_of_nodes()} nodes, {G_sub.number_of_edges()} edges")
 
-# if g_sub is too big, trim to max testing nodes
-if G_sub.number_of_nodes() > MAX_NODES:
-    sampled_nodes = random.sample(list(G_sub.nodes()), MAX_NODES)
-    G_sub2 = G.subgraph(sampled_nodes).copy()
-else:
-    G_sub2 = G_sub
-
-print(f"trimmed ego subgraph (G_sub2): {G_sub2.number_of_nodes()} nodes, {G_sub2.number_of_edges()} edges")
-
-
-g = ig.Graph.from_networkx(G_sub2)
-
-#partition graph with leiden algorithm
-communities = g.community_leiden(objective_function="modularity")
-
-#coloring nodes according to communities
-num = len(communities)
-pallete = ig.RainbowPalette(n=num)
-
-for i, community in enumerate(communities):
-  g.vs[community]["color"] = i
-  community_edges = g.es.select(_within=community)
-  community_edges["color"] = i
-
-#plot graph
-fig, ax = plt.subplots()
-
-ig.plot(communities,
-    target = ax,
-    mark_groups = True,
-    pallet = pallete,
-    vertex_size = 15,
-    edge_width = 1,)
-
-print("Leiden Clustering on Twitter Subgraph")
-fig.set_size_inches(15,15)
-
-print("Number of communities: ", len([community for community in communities if len(community)>1]))
-print("Number of verticies: ", g.vcount())
-print("Modularity: ", communities.modularity)
-plt.suptitle("IGraph Leiden Algorithm")
-plt.savefig("IGraph Leiden Algorithm")
-
-
+# === Scratch Leiden Algorithm Implementation ===
 class Leiden():
-
     def __init__(self, graph):
         
         self.origG = graph
@@ -132,7 +85,7 @@ class Leiden():
        return self.modularity
            
 
-    def localMoving(self, partition = None,agg= False):
+    def localMoving(self, partition=None, agg=False):
         print("Local moving phase...")
         partition = {node:node for node in self.graph} # reset communities
         queue = list(self.graph.nodes())
@@ -187,9 +140,10 @@ class Leiden():
                 partition[node] = partition[newCommunityNode]
 
         if agg:
-            self.visualize(partition,"Local Movement of Aggragated Graph")
+            #self.visualize(partition,"Local Movement of Aggragated Graph")
             return partition
         return self.refinementOfPartition(partition)
+
 
     """
     Un-Directed Modularity Formula:
@@ -222,14 +176,14 @@ class Leiden():
         Q = 0.0
         for nodes in comToNodes.values():
            for i,j in itertools.combinations(nodes,2):
-                    A_ij = g[i][j].get("weight",1) if g.has_edge(i,j) else 0
-                    d_i = degree.get(i,1)
-                    d_j = degree.get(j,1)
-                    if d_i == 0 or d_j == 0:
-                        expected = 0
-                    else:
-                        expected = (d_i*d_j/ (2*m))
-                    Q += A_ij - expected
+                A_ij = g[i][j].get("weight",1) if g.has_edge(i,j) else 0
+                d_i = degree.get(i,1)
+                d_j = degree.get(j,1)
+                if d_i == 0 or d_j == 0:
+                    expected = 0
+                else:
+                    expected = (d_i*d_j/ (2*m))
+                Q += A_ij - expected
     
         return Q/(2*m)
         
@@ -273,7 +227,7 @@ class Leiden():
                 #revert move for now
                 refined[node] = currentCommunity
             refined[node] = bestCommunity  # move the node to the best community found
-        self.visualize(refined,"Scratch Leiden After Local Movement and Refinement")
+        self.visualize(refined, "Scratch Leiden After Local Movement and Refinement", show_legend=True, get_handle_func=get_twitter_handle)
         return self.aggregateGraph(refined)
             
     def aggregateGraph(self,refined):
@@ -316,11 +270,11 @@ class Leiden():
         
             
         self.graph = aggregatedGraph # make original graph the new aggregatedGraph
-        self.visualize(partition,"Scratch Leiden After Aggregation")
+        #self.visualize(partition,"Scratch Leiden After Aggregation")
 
         return self.localMoving(partition,True)
     
-        
+     
     def colorCommunities(self,partiton):
         if len(partiton) == 0:
             return ['blue']
@@ -337,27 +291,64 @@ class Leiden():
 
         return list(nodeColors.values())
     
-    def visualize(self,partition,title):
-        
+    def visualize(self, partition, title, show_legend=False, get_handle_func=None, leaderboard_size=10):
         print("Num of Communities/Nodes: ", self.graph.number_of_nodes())
         print("Num of Edges: ", self.graph.number_of_edges())
         print("Modularity: ", self.findModularity(partition))
+        
         nodeColors = self.colorCommunities(partition)
-
-        plt.figure(figsize=(10, 10))
+        plt.figure(figsize=(15, 15))
         plt.tight_layout()
         pos = nx.spring_layout(self.graph, seed=42)
 
         nx.draw(
             self.graph, pos, node_color=nodeColors,
             node_size=50, font_size=10, font_color='black', edge_color='gray'
-            )
+        )
 
-        plt.suptitle(title, fontsize=14)
-        plt.savefig(title)
+        plt.title(title, fontsize=16)
+
+        if show_legend and get_handle_func:
+            degrees = dict(self.graph.degree())
+            top_nodes = sorted(degrees.items(), key=lambda x: x[1], reverse=True)[:leaderboard_size]
+            top_nodes = [(i + 1, node, deg, partition.get(node, -1)) for i, (node, deg) in enumerate(top_nodes)]
+
+            legend_lines = ["Top Twitter Users (Scratch Leiden):",
+                            "Rank | Node ID      | Handle         | Degree | Comm",
+                            "-" * 50]
+
+            for rank, node, deg, comm_id in top_nodes:
+                handle = get_handle_func(node)
+                handle = '@' + handle if not handle.startswith('@') else handle
+                legend_lines.append(f"{rank:<4} | {node:<12} | {handle:<14} | {deg:<6} | {comm_id}")
+
+            full_text = "\n".join(legend_lines)
+            plt.gcf().subplots_adjust(left=0.35)  # Shrink plot from the left
+            plt.gcf().text(0.02, 0.95, full_text,
+                fontsize=9, family='monospace',
+                verticalalignment='top', horizontalalignment='left',
+                bbox=dict(facecolor='white', edgecolor='black', alpha=0.9))
+
+
+            # Add numbered labels to top nodes
+            for rank, node, deg, comm_id in top_nodes:
+                if node in pos:
+                    x, y = pos[node]
+                    plt.text(
+                        x, y, str(rank),
+                        fontsize=10, fontweight='bold', color='black',
+                        horizontalalignment='center',
+                        verticalalignment='center',
+                        bbox=dict(facecolor='white', edgecolor='black', boxstyle='circle', alpha=0.7)
+                    )
+
+        plt.show()
+
         
+# === Testing + Graphing Section ===
 
-def get_twitter_handle(user_id): # userID retrieval from twitter (same code as InfoMap)
+# Function to retrieve Twitter handles from user ID 
+def get_twitter_handle(user_id): 
     url = 'https://twitids.com/'  
     session = requests.Session()
     headers = {
@@ -375,16 +366,166 @@ def get_twitter_handle(user_id): # userID retrieval from twitter (same code as I
                 return data['screen_name']
             else:
                 print(f"!! 'screen_name' not found in JSON for {user_id}")
-        else:
+        else: 
             print(f" !! HTTP error {response.status_code} for {user_id}")
     except Exception as e:
         print(f" !! Exception occurred for {user_id}: {e}")
         
-    return user_id  # returns id as a fallback, could be an old/changed account
+    return user_id  # Returns user ID as a fallback (could be an old/changed account)
 
-   
+# Function to display top "N" users by degree in the legend
 
-""""Testing/Running Code"""
-alg = Leiden(G_sub2)
-alg.run(1)
+def topGlobalUsersLegend(g, communities, getTwitterHandle, layout, ax=None, leaderboardPositions=5, pallete=None):
+    degrees = g.degree()
+    node_ids = g.vs["_nx_name"]
+    nodeToCommunity = {}
 
+    # Build node-to-community map
+    for i, community in enumerate(communities):
+        for idx in community:
+            node_name = g.vs[idx]["_nx_name"]
+            nodeToCommunity[node_name] = i
+
+    community_ids = [nodeToCommunity.get(node_name, -1) for node_name in node_ids]
+    full_data = list(zip(node_ids, degrees, community_ids))
+
+    # Get top N nodes by degree and assign rank
+    top_nodes_raw = sorted(full_data, key=lambda x: x[1], reverse=True)[:leaderboardPositions]
+    top_nodes = [(i + 1, node_name, deg, comm_id) for i, (node_name, deg, comm_id) in enumerate(top_nodes_raw)]
+
+    # Build text-based legend
+    legend_lines = ["Top Twitter Users (Entire Graph):", 
+                    "Rank | Node ID      | Handle         | Degree | Comm", 
+                    "-" * 50]
+
+    node_handle_map = {}
+    for rank, node_name, deg, comm_id in top_nodes:
+        handle = getTwitterHandle(node_name)
+        handle = '@' + handle if not handle.startswith('@') else handle
+        node_handle_map[node_name] = handle
+        line = f"{rank:<3} | {node_name:<12} | {handle:<14} | {deg:<6} | {comm_id}"
+        legend_lines.append(line)
+
+    full_text = "\n".join(legend_lines)
+
+    # Adjust figure to make room for legend on the left
+    plt.gcf().subplots_adjust(left=0.3)  
+    plt.gcf().text(0.05, 0.95, full_text,
+        fontsize=9, family='monospace',
+        verticalalignment='top', horizontalalignment='left',
+        bbox=dict(facecolor='white', edgecolor='black', alpha=0.9))
+
+    # Add numbered labels to the top nodes
+    used_labels = set()
+    name_to_idx = {g.vs[i]["_nx_name"]: i for i in range(g.vcount())}
+
+    for rank, node_name, deg, comm_id in top_nodes:
+        if node_name in used_labels or node_name not in name_to_idx:
+            continue
+        used_labels.add(node_name)
+
+        idx = name_to_idx[node_name]
+        x, y = layout[idx]
+
+        plt.text(
+            x, y, str(rank),
+            fontsize=10, fontweight='bold', color='black',
+            horizontalalignment='center',
+            verticalalignment='center',
+            bbox=dict(facecolor='white', edgecolor='black', boxstyle='circle', alpha=0.7)
+        )
+
+    return top_nodes
+
+
+
+
+# === Ego Graph from CNN, New Yorker, and Fox News ===
+ego_ids = ['2097571', '14677919', '1367531']  # CNN, New Yorker, Fox News- for each index respectfully
+G_sub = nx.Graph()
+
+for eid in ego_ids:
+    ego_file = os.path.join(graph_directory, f"{eid}.edges")
+    with open(ego_file, 'r') as f:
+        for line in f:
+            u, v = line.strip().split()
+            G_sub.add_edge(u, v)
+
+print(f"Combined ego subgraph: {G_sub.number_of_nodes()} nodes, {G_sub.number_of_edges()} edges")
+
+MAX_NODES = 200
+
+if G_sub.number_of_nodes() > MAX_NODES:
+    sampled_nodes = random.sample(list(G_sub.nodes()), MAX_NODES)
+    G_sub2 = G_sub.subgraph(sampled_nodes).copy()
+else:
+    G_sub2 = G_sub
+
+print(f"Trimmed ego subgraph (G_sub2): {G_sub2.number_of_nodes()} nodes, {G_sub2.number_of_edges()} edges")
+
+# Function for Leiden Algorithm x Ego Graph Implementation
+def leidenEgoGraph():
+    g = ig.Graph.from_networkx(G_sub)
+    communities = g.community_leiden(objective_function="modularity")
+    idx_to_node = g.vs["_nx_name"]
+
+    # Map community membership back to networkx nodes
+    membership = {}
+    for i, community in enumerate(communities):
+        for idx in community:
+            node_name = idx_to_node[idx]
+            membership[node_name] = i
+    nx.set_node_attributes(G_sub, membership, "community")
+
+    # Generate matplotlib layout and colors
+    pos = nx.spring_layout(G_sub, seed=42)
+    node_colors = [membership[node] for node in G_sub.nodes()]
+
+    fig, ax = plt.subplots(figsize=(15, 15))
+
+    nx.draw(
+        G_sub, pos,
+        node_color=node_colors,
+        cmap=plt.cm.rainbow,
+        node_size=50,
+        edge_color='gray',
+        with_labels=False,
+        ax=ax
+    )
+    plt.title("Leiden Communities on Twitter Ego Subgraph", fontsize=16)
+
+    # Add text-based legend showing top users
+    layout = g.layout("fr")
+    top_nodes = topGlobalUsersLegend(g,communities,get_twitter_handle,layout=layout,ax=ax, leaderboardPositions=5)
+    for rank, node, deg, comm_id in top_nodes:
+        x, y = pos[node]
+        plt.text(
+            x, y, str(rank),
+            fontsize=10, fontweight='bold', color='black',
+            horizontalalignment='center',
+            verticalalignment='center',
+            bbox=dict(facecolor='white', edgecolor='black', boxstyle='circle', alpha=0.7)
+        )
+
+    plt.show()
+
+    # Statistics
+    print("Leiden Clustering on Twitter Subgraph")
+    print("Number of communities:", len([c for c in communities if len(c) > 1]))
+    print("Number of vertices:", g.vcount())
+    print("Modularity:", communities.modularity)
+
+# Function for SCRATCH Leiden Algorithm x Ego Graph Implementation
+def scratchEgoGraph():
+    alg = Leiden(G_sub2)
+    alg.run(resolutionParameter=1)
+    alg.visualize(alg.communities, "Scratch Leiden Communities on Twitter Ego Subgraph", show_legend=True, top_k=10)
+
+    # Statistics
+    print("Scratch Leiden Clustering on Ego Graph")
+    print("Number of communities:", len(set(alg.communities.values())))
+    print("Number of vertices:", len(alg.graph.nodes()))
+    print("Final modularity:", alg.modularity)
+
+leidenEgoGraph()
+scratchEgoGraph()
