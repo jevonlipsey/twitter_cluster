@@ -519,7 +519,7 @@ def leidenEgoGraph():
 def scratchEgoGraph():
     alg = Leiden(G_sub2)
     alg.run(resolutionParameter=1)
-    alg.visualize(alg.communities, "Scratch Leiden Communities on Twitter Ego Subgraph", show_legend=True, top_k=10)
+    alg.visualize(alg.communities, "Scratch Leiden Communities on Twitter Ego Subgraph", show_legend=True, leaderboard_size=10)
 
     # Statistics
     print("Scratch Leiden Clustering on Ego Graph")
@@ -527,5 +527,22 @@ def scratchEgoGraph():
     print("Number of vertices:", len(alg.graph.nodes()))
     print("Final modularity:", alg.modularity)
 
+""""Testing/Running Scratch Leiden"""
+mScores = {}
+for i in range(1,2):
+     alg = Leiden(G_sub2)
+     modularity = alg.run(i)
+     mScores[i] = modularity
+bestMScore = max(mScores.values())
+resolutionP = [key for key in mScores if mScores[key] == bestMScore]
+resolutionP = resolutionP[0]
+
+print()
+alg = Leiden(G_sub2)
+print("Number of Iterations: ", resolutionP)
+alg.run(resolutionP)
+print()
+
+# === Visualize Graph ===
 leidenEgoGraph()
 scratchEgoGraph()
