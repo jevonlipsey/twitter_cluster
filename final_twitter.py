@@ -13,6 +13,7 @@ from infomap import Infomap
 
 MAX_NODES = 200
 SHOW_TOP_USERS = 10
+ITERATIONS = 10
 
 
 class ScratchInfomap:
@@ -30,71 +31,104 @@ class ScratchInfomap:
         module_flow = defaultdict(float)
 
         for node, module in modules.items():
-            node_flow = self.flow[node]
-            module_flow[module] += node_flow
-            for neighbor in self.graph.neighbors(node):
-                if modules[neighbor] != module:
-                    exit_probs[module] += node_flow / self.graph.degree(node)
+            module_flow[module] += self.flow[node]
+
+        processed = set()
+        for u, v in self.graph.edges():
+            if (u, v) in processed or (v, u) in processed:
+                continue
+            processed.add((u, v))
+            mod_u = modules[u]
+            mod_v = modules[v]
+            if mod_u != mod_v:
+                exit_probs[mod_u] += self.flow[u] / self.graph.degree(u)
+                exit_probs[mod_v] += self.flow[v] / self.graph.degree(v)
 
         total_exit = sum(exit_probs.values())
+
+        if total_exit == 0:
+            H_P_single = 0.0
+            for flow in self.flow.values():
+                if flow > 0:
+                    H_P_single -= flow * math.log2(flow)
+            return H_P_single
+
         H_Q = -sum((exit / total_exit) * math.log2(exit / total_exit)
                    for exit in exit_probs.values() if exit > 0)
 
         H_P = 0
         for mod, flow in module_flow.items():
-            prob_exit = exit_probs[mod]
+            prob_exit = exit_probs.get(mod, 0)
             prob_stay = flow - prob_exit
-            total = prob_exit + prob_stay
+            total = flow
+
             if total > 0:
-                H_P += total * -(
-                    (prob_exit / total) * math.log2(prob_exit / total) if prob_exit > 0 else 0 +
-                                                                                             (
-                                                                                                     prob_stay / total) * math.log2(
-                        prob_stay / total) if prob_stay > 0 else 0
-                )
+                terms = []
+                if prob_exit > 0:
+                    terms.append((prob_exit / total) * math.log2(prob_exit / total))
+                if prob_stay > 0:
+                    terms.append((prob_stay / total) * math.log2(prob_stay / total))
+                H_P_contribution = sum(terms) * flow
+                H_P += H_P_contribution
 
-        return total_exit * H_Q + H_P
+        H_P = -H_P
+        L = total_exit * H_Q + H_P
+        return L
 
-    def run(self, iterations):
+    def run(self, iterations=10):
+        best_modules = self.modules.copy()
+        best_score = self._map_equation(best_modules)
+
         for _ in range(iterations):
             nodes = list(self.graph.nodes())
             random.shuffle(nodes)
+            current_modules = self.modules.copy()
+
             for node in nodes:
-                best_module = self.modules[node]
-                best_score = self._map_equation(self.modules)
+                current_module = current_modules[node]
+                neighbors = list(self.graph.neighbors(node))
+                neighbor_modules = {current_modules[n] for n in neighbors}
+                candidate_modules = neighbor_modules.union({current_module, node})
 
-                neighbor_modules = {self.modules[n] for n in self.graph.neighbors(node)}
-                for mod in neighbor_modules:
-                    old_mod = self.modules[node]
-                    self.modules[node] = mod
-                    score = self._map_equation(self.modules)
-                    if score < best_score:
-                        best_score = score
-                        best_module = mod
-                    self.modules[node] = old_mod
+                best_local_score = float('inf')
+                best_local_module = current_module
 
-                self.modules[node] = best_module
+                for candidate in candidate_modules:
+                    temp_modules = current_modules.copy()
+                    temp_modules[node] = candidate
+                    score = self._map_equation(temp_modules)
 
+                    if score < best_local_score:
+                        best_local_score = score
+                        best_local_module = candidate
+
+                current_modules[node] = best_local_module
+
+            current_score = self._map_equation(current_modules)
+            if current_score < best_score:
+                best_score = current_score
+                best_modules = current_modules.copy()
+
+            self.modules = current_modules.copy()
+
+        self.modules = best_modules
         return self.modules
 
 
 # helper functions section:
-# convert node id's to handles
 def get_twitter_handle(user_id):
-    url = 'https://twitids.com/'  #
+    """converts node id to twitter handle using twitids.com"""
+    url = 'https://twitids.com/'
     session = requests.Session()
-
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
                       'Chrome/91.0.4472.124 Safari/537.36',
         'Accept': 'application/json',
     }
-
     form_data = {'user_input': user_id}
 
     try:
         response = session.post(url, data=form_data, headers=headers, timeout=10)
-
         if response.status_code == 200:
             data = response.json()
             if 'screen_name' in data:
@@ -103,158 +137,171 @@ def get_twitter_handle(user_id):
                 print(f"!! 'screen_name' not found in JSON for {user_id}")
         else:
             print(f" !! HTTP error {response.status_code} for {user_id}")
-
     except Exception as e:
         print(f" !! Exception occurred for {user_id}: {e}")
 
-    return user_id  # returns id as a fallback, could be an old/changed account
-##
+    return user_id
 
 
-# init graph section:
-# download graph data and init as nx
-output = 'twitter_graph.tar.gz'
-extract_dir = 'twitter_graph'
-GRAPH_DIR = os.path.join(extract_dir, 'twitter')
-url = 'https://drive.google.com/uc?id=172sXL1aeK_ZNXCa3WCjkMqtJsn87SMgx&confirm=t'
-edges_list = []
+def dl_graph():
+    """pulls graph from google drive and extracts it"""
+    output = 'twitter_graph.tar.gz'
+    extract_dir = 'twitter_graph'
+    GRAPH_DIR = os.path.join(extract_dir, 'twitter')
+    url = 'https://drive.google.com/uc?id=172sXL1aeK_ZNXCa3WCjkMqtJsn87SMgx&confirm=t'
 
-if not os.path.exists(GRAPH_DIR):
-    if not os.path.exists(output):
-        print("downloading graph data...")
-        gdown.download(url, output, quiet=False)
-    print("extracting data...")
-    with tarfile.open(output, 'r:gz') as tar:
-        tar.extractall(extract_dir)
-else:
-    print(f"graph directory {GRAPH_DIR} found; using existing data.")
+    if not os.path.exists(GRAPH_DIR):
+        if not os.path.exists(output):
+            print("downloading graph data...")
+            gdown.download(url, output, quiet=False)
+        print("extracting data...")
+        with tarfile.open(output, 'r:gz') as tar:
+            tar.extractall(extract_dir)
+    else:
+        print(f"graph directory {GRAPH_DIR} found; using existing data.")
 
-edge_files = glob.glob(os.path.join(GRAPH_DIR, '*.edges'))
-
-G = nx.Graph()
-for f in edge_files:
-    with open(f, 'r') as f:
-        for line in f:
-            u, v = line.strip().split()
-            G.add_edge(u, v)
-            edges_list.append((u, v))
-
-print(f"success: combined graph has {G.number_of_nodes()} nodes and {G.number_of_edges()} edges.")
-##
-
-# init subgraphs section: test with subgraphs until ready to build full graph (if possible)
-# g_sub: left vs. right news accounts
-ego_ids = ['2097571', '14677919', '1367531']  # CNN, New Yorker, Fox News
-G_sub = nx.Graph()
-
-for eid in ego_ids:
-    ego_file = os.path.join(GRAPH_DIR, f"{eid}.edges")
-    with open(ego_file, 'r') as f:
-        for line in f:
-            u, v = line.strip().split()
-            G_sub.add_edge(u, v)
-
-print(f"left vs. right news subgraph: {G_sub.number_of_nodes()} nodes, {G_sub.number_of_edges()} edges")
-
-'''
-# g_sub2: random ego graph
-center_node = random.choice(list(G.nodes()))
-G_sub2 = nx.ego_graph(G, center_node, radius=2)
-print(f"ego subgraph: {G_sub2.number_of_nodes()} nodes, {G_sub2.number_of_edges()} edges")
-
-# if g_sub is too big, trim to max testing nodes
-if G_sub2.number_of_nodes() > MAX_NODES:
-    sampled_nodes = random.sample(list(G_sub2.nodes()), MAX_NODES)
-    G_sub2 = G.subgraph(sampled_nodes).copy()
-'''
-##
-
-# run Infomap section:
-# OPTIONS: G, G_sub, G_sub2
-G_working = G_sub
-
-infomap = ScratchInfomap(G_working)
-scratch_start = time.time()
-communities = infomap.run(100)
-scratch_end = time.time()
-print(f"infomap run complete: {scratch_end - scratch_start} seconds")
-
-# map communities to ints
-unique_communities = set(communities.values())
-community_to_int = {comm: i for i, comm in enumerate(unique_communities)}
-int_communities = {node: community_to_int[comm] for node, comm in communities.items()}
-num_coms = len(unique_communities)
-print(f"found {num_coms} communities")
-##
-
-# visualization section:
-pos = nx.spring_layout(G_working, seed=42)
-community_map = {}
-for node, com_id in int_communities.items():
-    community_map[node] = com_id
-
-colors = plt.colormaps.get_cmap('tab20')
-fig, ax = plt.subplots(figsize=(12, 10))
-
-# draw edges
-nx.draw_networkx_edges(G_working, pos, alpha=0.3, ax=ax)
-# draw nodes
-node_colors = [colors(community_map.get(node, 0) % 20) for node in G_working.nodes()]
-nx.draw_networkx_nodes(G_working, pos, node_color=node_colors, node_size=100, ax=ax)
-
-# draw top user node indicators
-top_nodes = sorted(G_working.degree, key=lambda x: x[1], reverse=True)[:SHOW_TOP_USERS]
-indicator_map = {}
-for i, (node, _) in enumerate(top_nodes):
-    indicator = str(i + 1)
-    indicator_map[node] = indicator
-    ax.text(pos[node][0], pos[node][1], indicator, fontsize=9, fontweight='bold', ha='center', va='center',
-            color='black')
-
-# create legend data with twitter handles
-legend_data = []
-for i, (node, _) in enumerate(top_nodes):
-    indicator = str(i + 1)
-    handle = get_twitter_handle(node)
-    legend_data.append((indicator, node, handle, community_map.get(node, 'N/A'), G_working.degree[node]))
-# draw text legend at right of plot
-ax.set_title("Twitter Network Communities")
-ax.axis('off')
-
-legend_str = "\n".join([f"{ind}. @{handle}, Com: {com}, Deg: {deg}"
-                        for ind, uid, handle, com, deg in legend_data])
+    return GRAPH_DIR
 
 
-plt.figtext(0.99, 0.5, legend_str, fontsize=9, ha='right', va='center',
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.6))
+def save_graph(graph, filename):
+    """saves a NetworkX graph to an .edges file"""
+    with open(filename, 'w') as f:
+        for u, v in graph.edges():
+            f.write(f"{u} {v}\n")
+    print(f"graph edges saved to {filename}")
 
-plt.tight_layout()
-#plt.show() # not working and not sure why... savefig works though
-plt.savefig('twitter_communities.png', dpi=300)
-print("Plot saved as 'twitter_communities.png'.")
-##
 
-# community stats
-community_sizes = Counter(int_communities.values())
-print("\nCommunity sizes:")
-for comm_id, size in sorted(community_sizes.items()):
-    print(f"Community {comm_id}: {size} nodes")
+def build_graph(graph_dir):
+    """builds combined graph out of .edges files"""
+    edge_files = glob.glob(os.path.join(graph_dir, '*.edges'))
+    G = nx.Graph()
+    for f in edge_files:
+        with open(f, 'r') as file:
+            for line in file:
+                u, v = line.strip().split()
+                G.add_edge(u, v)
+    print(f"success: combined graph has {G.number_of_nodes()} nodes and {G.number_of_edges()} edges.")
+    return G
 
-print("\ntop nodes and their communities:")
-for i, (node, _) in enumerate(top_nodes):
-    community_id = int_communities.get(node, 'N/A')
-    handle = get_twitter_handle(node)
-    print(f"Node {node}: Community {community_id}, Handle: @{handle}")
 
-# time stats - compare vs official infomap
-im = Infomap()
-node_id_map = {node: i for i, node in enumerate(G_working.nodes())}
-for u, v in G_working.edges():
-    im.addLink(node_id_map[u], node_id_map[v])
-official_start = time.time()
-im.run()
-official_end = time.time()
+def build_news_subgraph(graph_dir, ego_ids):
+    """builds a filtered subgraph with given ego ids. in our case, used to build subgraphs off news accounts"""
+    G_news = nx.Graph()
+    for eid in ego_ids:
+        ego_file = os.path.join(graph_dir, f"{eid}.edges")
+        with open(ego_file, 'r') as f:
+            for line in f:
+                u, v = line.strip().split()
+                G_news.add_edge(u, v)
+    print(f"left vs. right news subgraph: {G_news.number_of_nodes()} nodes, {G_news.number_of_edges()} edges")
+    return G_news
 
-print(f"[[ our implemented Infomap took {scratch_end - scratch_start:.4f} seconds ]]")
-print("running official Infomap...")
-print(f"[[ official Infomap took {official_end - official_start:.4f} seconds ]]")
+
+def build_small_subgraph(G, max_nodes=MAX_NODES):
+    """Builds a small ego subgraph with up to `max_nodes` nodes."""
+    center_node = random.choice(list(G.nodes()))
+    G_small = nx.ego_graph(G, center_node, radius=2)
+    print(f"ego subgraph: {G_small.number_of_nodes()} nodes, {G_small.number_of_edges()} edges")
+
+    # If G_small is too big, trim to max_nodes
+    if G_small.number_of_nodes() > max_nodes:
+        sampled_nodes = random.sample(list(G_small.nodes()), max_nodes)
+        G_small = G_small.subgraph(sampled_nodes).copy()
+        print(f"trimmed to max_nodes: {G_small.number_of_nodes()} nodes, {G_small.number_of_edges()} edges")
+    return G_small
+
+
+def run_infomap(G_working, iterations=10):
+    """runs our ScratchInfomap on the graph and returns communities and timing info."""
+    infomap = ScratchInfomap(G_working)
+    start_time = time.time()
+    communities = infomap.run(iterations)
+    end_time = time.time()
+    print(f"Infomap run complete: {end_time - start_time:.2f} seconds")
+    return communities, start_time, end_time
+
+
+def plot_communities(G_working, communities):
+    unique_communities = set(communities.values())
+    community_to_int = {comm: i for i, comm in enumerate(unique_communities)}
+    int_communities = {node: community_to_int[comm] for node, comm in communities.items()}
+    num_coms = len(unique_communities)
+    print(f"Found {num_coms} communities.")
+
+    pos = nx.spring_layout(G_working, seed=42)
+    community_map = {node: int_communities[node] for node in G_working.nodes()}
+    colors = plt.colormaps.get_cmap('tab20')
+    fig, ax = plt.subplots(figsize=(12, 10))
+    nx.draw_networkx_edges(G_working, pos, alpha=0.3, ax=ax)
+
+    node_colors = [colors(community_map.get(node, 0) % 20) for node in G_working.nodes()]
+    nx.draw_networkx_nodes(G_working, pos, node_color=node_colors, node_size=100, ax=ax)
+
+    top_nodes = sorted(G_working.degree, key=lambda x: x[1], reverse=True)[:SHOW_TOP_USERS]
+    indicator_map = {}
+    for i, (node, _) in enumerate(top_nodes):
+        indicator = str(i + 1)
+        indicator_map[node] = indicator
+        ax.text(pos[node][0], pos[node][1], indicator, fontsize=9, fontweight='bold',
+                ha='center', va='center', color='black')
+
+    legend_data = []
+    for i, (node, _) in enumerate(top_nodes):
+        indicator = str(i + 1)
+        handle = get_twitter_handle(node)
+        legend_data.append((indicator, node, handle, community_map.get(node, 'N/A'), G_working.degree[node]))
+
+    ax.set_title("ScratchInfomap Twitter Communities")
+    ax.axis('off')
+    legend_str = "\n".join([f"{ind}. @{handle}, Com: {com}, Deg: {deg}"
+                            for ind, uid, handle, com, deg in legend_data])
+    plt.figtext(0.99, 0.5, legend_str, fontsize=9, ha='right', va='center',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.6))
+    plt.tight_layout()
+    plt.savefig('twitter_communities.png', dpi=300)
+    print("Plot saved as 'twitter_communities.png'.")
+
+    community_sizes = Counter(int_communities.values())
+    print("\nCommunity sizes:")
+    for comm_id, size in sorted(community_sizes.items()):
+        print(f"Community {comm_id}: {size} nodes")
+
+    print("\nTop nodes and their communities:")
+    for i, (node, _) in enumerate(top_nodes):
+        community_id = int_communities.get(node, 'N/A')
+        handle = get_twitter_handle(node)
+        print(f"Node {node}: Community {community_id}, Handle: @{handle}")
+
+
+def compare_algs(G_working, scratch_start, scratch_end):
+    """compare with official infomap"""
+    im = Infomap()
+    node_id_map = {node: i for i, node in enumerate(G_working.nodes())}
+    for u, v in G_working.edges():
+        im.addLink(node_id_map[u], node_id_map[v])
+    official_start = time.time()
+    im.run()
+    official_end = time.time()
+
+    print(f"[[ our implemented Infomap took {scratch_end - scratch_start:.4f} seconds ]]")
+    print(f"[[ official Infomap took {official_end - official_start:.4f} seconds ]]")
+
+
+def main():
+    twitter_data = dl_graph()
+    ego_ids = ['2097571', '14677919', '1367531']  # CNN, New Yorker, Fox News
+
+    G = build_graph(twitter_data)
+    G_news = build_news_subgraph(twitter_data, ego_ids)
+    G_small = build_small_subgraph(G)
+
+    # save_graph(G_news, 'g_news.edges')
+    # use to toggle between graphs
+    G_working = G_news
+
+    communities, scratch_start, scratch_end = run_infomap(G_working, ITERATIONS)
+    plot_communities(G_working, communities)
+    compare_algs(G_working, scratch_start, scratch_end)
+
+
+main()
