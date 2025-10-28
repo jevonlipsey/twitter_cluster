@@ -4,6 +4,9 @@
 
 **Course:** Data Structures & Algorithms Final Project
 
+<img width="1084" height="773" alt="example_cluster" src="https://github.com/user-attachments/assets/5510d6a3-8a64-4a0b-94c4-e8ee9f38fdbd" />
+
+
 ## Overview
 
 This project implements and compares two advanced community detection algorithms—**Infomap** and **Leiden**—from scratch in Python. The goal was to analyze complex social network structures within the Stanford SNAP Twitter dataset, compare the algorithmic approaches (flow compression vs. modularity optimization), and identify political echo chambers.
