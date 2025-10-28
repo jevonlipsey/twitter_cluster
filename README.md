@@ -1,28 +1,32 @@
-# Twitter Community Detection
-A comparative study of community detection algorithms on Twitter social networks using Leiden and Infomap algorithms.
+# Twitter Community Detection: Infomap vs. Leiden
+
+**Team:** Jevon Lipsey, Zahara Love, Marcos Arnold
+
+**Course:** Data Structures & Algorithms Final Project
 
 ## Overview
-This project implements and compares two community detection algorithms to identify social communities within Twitter networks:
 
-Leiden Algorithm: Optimizes modularity through local movement, refinement, and aggregation phases
-Infomap Algorithm: Uses information compression and random walk flow to detect communities
+This project implements and compares two advanced community detection algorithms—**Infomap** and **Leiden**—from scratch in Python. The goal was to analyze complex social network structures within the Stanford SNAP Twitter dataset, compare the algorithmic approaches (flow compression vs. modularity optimization), and identify political echo chambers.
 
 ## Key Features
-Custom implementations of both Leiden and Infomap algorithms from scratch
-Analysis of Twitter subgraphs centered around political news accounts (CNN, Fox News, The New Yorker)
-Community structure visualization and echo chamber detection
-Performance comparison between custom implementations and established libraries
 
-## Results
-Successfully identified meaningful political communities in Twitter networks
-Demonstrated echo chamber detection capabilities
-Achieved modularity scores up to 0.55 with Infomap on smaller subgraphs
-Found evidence of cross-community interactions, suggesting less strict echo chambers than expected
+* **From-Scratch Infomap:** A Python implementation of the Infomap algorithm based on the Map Equation and information flow compression.
+* **From-Scratch Leiden:** A Python implementation of the Leiden algorithm based on modularity optimization, including the local movement, refinement, and aggregation phases.
+* **Performance Benchmarking:** Both from-scratch algorithms are benchmarked against their official, optimized library counterparts.
+* **Visualization:** Uses `NetworkX` and `Matplotlib` to visualize the detected community clusters and identify high-degree "influencer" nodes.
+
+## Algorithms Implemented
+
+1.  **Infomap (My Contribution):** Implemented in `scratch_infomap.py`. This method views community detection as a data compression problem. It uses a random walker model to find the network partition that provides the most compressed description (shortest codelength) of information flow.
+2.  **Leiden (Team Contribution):** Implemented in `scratch_leiden.py`. This algorithm is a refinement of the Louvain method that optimizes a "modularity" score. It guarantees that communities are well-connected and prevents the poorly-connected clusters that Louvain can sometimes produce.
 
 ## Dataset
-Twitter follower network data from Stanford SNAP dataset (80K nodes, 1.2M edges)
 
-## Credits
+* **Source:** [Stanford SNAP Twitter Dataset](https://snap.stanford.edu/data/ego-Twitter.html)
+* **Size:** 81,306 nodes and 1,768,149 edges.
+* **Analysis:** Due to the O(n^2) complexity of our from-scratch builds, we ran our final analysis on 200-node subgraphs centered on political news accounts (CNN, The New Yorker, Fox News) to test for echo chambers.
 
-Built by Jevon Lipsey, Zaharalita Love, and Marcos Arnold on the [SNAP dataset](https://snap.stanford.edu/data/ego-Twitter.html).
+## Key Findings
 
+Our from-scratch `ScratchInfomap` implementation successfully identified 3 distinct communities in the 200-node political subgraph and achieved a **modularity score of 0.5482** (rounded to 0.55).
+This is a strong result, as a modularity score greater than 0.3 is generally considered to demonstrate significant community structure. Some really interesting communities can be detected if the graph subset is modified!
